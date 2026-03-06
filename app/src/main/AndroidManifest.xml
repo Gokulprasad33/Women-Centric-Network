@@ -8,6 +8,13 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- SMS permission -->
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- Phone call permission -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- Push notifications (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Telephony not strictly required — app works on tablets without it -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -23,19 +30,15 @@
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyDU8a5yJ82Zoo7l7anFKDsEb5hTbNDCGpY" />
 
-        <activity
-            android:name=".View.MapFragment"
-            android:exported="false"
-            android:label="@string/title_activity_map_screen" />
-        <activity
-            android:name=".View.SettingsScreen"
-            android:exported="false" />
-        <activity
-            android:name=".View.NotificationScreen"
-            android:exported="false" />
-        <activity
-            android:name=".View.CommunityScreen"
-            android:exported="false" />
+        <!-- Firebase Cloud Messaging Service -->
+        <service
+            android:name=".Firebase.FCMService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

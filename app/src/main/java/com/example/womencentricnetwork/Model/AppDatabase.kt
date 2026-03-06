@@ -8,6 +8,8 @@ import androidx.room.TypeConverters
 import com.example.womencentricnetwork.Model.PersonalData.PersonalInfoModel
 import com.example.womencentricnetwork.Model.Settings.EmergencyContactDao
 import com.example.womencentricnetwork.Model.Settings.EmergencyContactEntity
+import com.example.womencentricnetwork.Model.Settings.SosEventDao
+import com.example.womencentricnetwork.Model.Settings.SosEventEntity
 import com.example.womencentricnetwork.Model.Settings.TrustedLocationDao
 import com.example.womencentricnetwork.Model.Settings.TrustedLocationEntity
 import com.example.womencentricnetwork.PersonalInfoDao
@@ -17,9 +19,10 @@ import com.example.womencentricnetwork.PersonalInfoDao
     entities = [
         PersonalInfoModel::class,
         EmergencyContactEntity::class,
-        TrustedLocationEntity::class
+        TrustedLocationEntity::class,
+        SosEventEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -27,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun personalInfoDao(): PersonalInfoDao
     abstract fun emergencyContactDao(): EmergencyContactDao
     abstract fun trustedLocationDao(): TrustedLocationDao
+    abstract fun sosEventDao(): SosEventDao
 
     companion object {
         @Volatile

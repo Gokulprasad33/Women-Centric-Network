@@ -1,5 +1,7 @@
 package com.example.womencentricnetwork.Repository
 
+import android.util.Log
+import com.example.womencentricnetwork.Firebase.FirestoreManager
 import com.example.womencentricnetwork.Model.Settings.EmergencyContactDao
 import com.example.womencentricnetwork.Model.Settings.EmergencyContactEntity
 import com.example.womencentricnetwork.Model.Settings.SettingsPreferences
@@ -11,8 +13,13 @@ import kotlinx.coroutines.flow.Flow
 class SettingsRepository(
     private val emergencyContactDao: EmergencyContactDao,
     private val trustedLocationDao: TrustedLocationDao,
-    private val preferencesDataStore: SettingsPreferencesDataStore
+    private val preferencesDataStore: SettingsPreferencesDataStore,
+    private val firestoreManager: FirestoreManager = FirestoreManager()
 ) {
+
+    companion object {
+        private const val TAG = "SettingsRepository"
+    }
 
     // ── Emergency Contacts ──────────────────────────────────────────────
 
@@ -20,15 +27,34 @@ class SettingsRepository(
         emergencyContactDao.getAll()
 
     suspend fun addContact(contact: EmergencyContactEntity) {
-        emergencyContactDao.insert(contact)
+        val id = emergencyContactDao.insert(contact)
+        // Sync to Firestore (non-blocking — local Room is the source of truth)
+        try {
+            val savedContact = contact.copy(id = id)
+            firestoreManager.syncContact(savedContact)
+        } catch (e: Exception) {
+            Log.e(TAG, "Firestore sync failed on add: ${e.message}")
+        }
     }
 
     suspend fun updateContact(contact: EmergencyContactEntity) {
         emergencyContactDao.update(contact)
+        // Sync to Firestore
+        try {
+            firestoreManager.syncContact(contact)
+        } catch (e: Exception) {
+            Log.e(TAG, "Firestore sync failed on update: ${e.message}")
+        }
     }
 
     suspend fun deleteContact(id: Long) {
         emergencyContactDao.deleteById(id)
+        // Delete from Firestore
+        try {
+            firestoreManager.deleteContact(id)
+        } catch (e: Exception) {
+            Log.e(TAG, "Firestore sync failed on delete: ${e.message}")
+        }
     }
 
     // ── Trusted Locations ───────────────────────────────────────────────

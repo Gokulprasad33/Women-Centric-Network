@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,13 +27,17 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.fragment.findNavController
+import com.example.womencentricnetwork.Firebase.AuthManager
 import com.example.womencentricnetwork.Model.Settings.EmergencyContactEntity
 import com.example.womencentricnetwork.Model.Settings.TrustedLocationEntity
+import com.example.womencentricnetwork.R
 import com.example.womencentricnetwork.ViewModel.SettingsViewModel
 
 class SettingsScreen : Fragment() {
 
     private val viewModel: SettingsViewModel by viewModels()
+    private val authManager = AuthManager()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -42,7 +47,13 @@ class SettingsScreen : Fragment() {
         return ComposeView(requireContext()).apply {
             setContent {
                 MaterialTheme {
-                    SettingsScreenContent(viewModel)
+                    SettingsScreenContent(
+                        viewModel = viewModel,
+                        onLogout = {
+                            authManager.logout()
+                            findNavController().navigate(R.id.action_settingsFragment_to_loginFragment)
+                        }
+                    )
                 }
             }
         }
@@ -54,7 +65,7 @@ class SettingsScreen : Fragment() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 @Composable
-fun SettingsScreenContent(viewModel: SettingsViewModel) {
+fun SettingsScreenContent(viewModel: SettingsViewModel, onLogout: () -> Unit = {}) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     if (uiState.isLoading) {
@@ -243,6 +254,46 @@ fun SettingsScreenContent(viewModel: SettingsViewModel) {
                     Icon(Icons.Default.Add, contentDescription = "Add location")
                     Spacer(Modifier.width(4.dp))
                     Text("Add Trusted Location")
+                }
+            }
+
+            // ── Logout ───────────────────────────────────────────────────
+            item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Account") }
+            item {
+                var showLogoutConfirm by remember { mutableStateOf(false) }
+
+                Button(
+                    onClick = { showLogoutConfirm = true },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.ExitToApp, contentDescription = "Logout")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Logout")
+                }
+
+                if (showLogoutConfirm) {
+                    AlertDialog(
+                        onDismissRequest = { showLogoutConfirm = false },
+                        title = { Text("Logout") },
+                        text = { Text("Are you sure you want to logout?") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showLogoutConfirm = false
+                                onLogout()
+                            }) {
+                                Text("Logout", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showLogoutConfirm = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
                 }
             }
 
