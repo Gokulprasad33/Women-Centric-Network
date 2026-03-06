@@ -6,126 +6,104 @@
     android:id="@+id/nav_graph"
     app:startDestination="@id/loginFragment">
 
-    <!-- Login -->
+    <!-- Auth -->
     <fragment
         android:id="@+id/loginFragment"
         android:name="com.example.womencentricnetwork.View.LoginFragment"
         android:label="Login">
-        <action
-            android:id="@+id/action_loginFragment_to_registerFragment"
-            app:destination="@id/registerFragment" />
-        <action
-            android:id="@+id/action_loginFragment_to_homeFragment"
-            app:destination="@id/homeFragment"
-            app:popUpTo="@id/loginFragment"
-            app:popUpToInclusive="true" />
+        <action android:id="@+id/action_loginFragment_to_registerFragment" app:destination="@id/registerFragment" />
+        <action android:id="@+id/action_loginFragment_to_homeFragment" app:destination="@id/homeFragment"
+            app:popUpTo="@id/loginFragment" app:popUpToInclusive="true" />
     </fragment>
 
-    <!-- Register -->
     <fragment
         android:id="@+id/registerFragment"
         android:name="com.example.womencentricnetwork.View.RegisterFragment"
         android:label="Register">
-        <action
-            android:id="@+id/action_registerFragment_to_homeFragment"
-            app:destination="@id/homeFragment"
-            app:popUpTo="@id/loginFragment"
-            app:popUpToInclusive="true" />
+        <action android:id="@+id/action_registerFragment_to_homeFragment" app:destination="@id/homeFragment"
+            app:popUpTo="@id/loginFragment" app:popUpToInclusive="true" />
     </fragment>
 
-<fragment
+    <!-- Bottom Nav Tabs (5 top-level destinations) -->
+    <fragment
         android:id="@+id/homeFragment"
         android:name="com.example.womencentricnetwork.View.HomeFragment"
         android:label="Home"
-        tools:layout="@layout/fragment_home" >
-        <action
-            android:id="@+id/action_homeFragment_to_chatFragment"
-            app:destination="@id/chatFragment" />
-        <action
-            android:id="@+id/action_homeFragment_to_profileFragment"
-            app:destination="@id/profileFragment" />
-    <action
-        android:id="@+id/action_homeFragment_to_notificationFragment"
-        app:destination="@id/notificationFragment" />
-    <action
-        android:id="@+id/action_homeFragment_to_settingsFragment"
-        app:destination="@id/settingsFragment" />
-    <action
-        android:id="@+id/action_homeFragment_to_mapFragment"
-        app:destination="@id/mapFragment" />
-    <action
-        android:id="@+id/action_homeFragment_to_communityFragment"
-        app:destination="@id/communityFragment" />
-</fragment>
+        tools:layout="@layout/fragment_home" />
+
+    <fragment
+        android:id="@+id/privateChatListFragment"
+        android:name="com.example.womencentricnetwork.View.PrivateChatListFragment"
+        android:label="Chat" />
+
+    <fragment
+        android:id="@+id/communityListFragment"
+        android:name="com.example.womencentricnetwork.View.CommunityListFragment"
+        android:label="Community" />
+
+    <fragment
+        android:id="@+id/articlesFragment"
+        android:name="com.example.womencentricnetwork.View.ArticlesFragment"
+        android:label="Articles" />
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.example.womencentricnetwork.View.SettingsScreen"
+        android:label="Settings">
+        <action android:id="@+id/action_settingsFragment_to_loginFragment" app:destination="@id/loginFragment"
+            app:popUpTo="@id/nav_graph" app:popUpToInclusive="true" />
+    </fragment>
+
+    <!-- Detail screens (navigated to from tabs, not in bottom nav) -->
+    <fragment
+        android:id="@+id/privateChatFragment"
+        android:name="com.example.womencentricnetwork.View.PrivateChatFragment"
+        android:label="Private Chat" />
+
+    <fragment
+        android:id="@+id/communityChatFragment"
+        android:name="com.example.womencentricnetwork.View.CommunityChatFragment"
+        android:label="Community Chat" />
+
+    <fragment
+        android:id="@+id/createArticleFragment"
+        android:name="com.example.womencentricnetwork.View.CreateArticleFragment"
+        android:label="Create Article" />
+
+    <fragment
+        android:id="@+id/articleDetailFragment"
+        android:name="com.example.womencentricnetwork.View.ArticleDetailFragment"
+        android:label="Article" />
+
+    <!-- Existing secondary screens -->
+    <fragment
+        android:id="@+id/mapFragment"
+        android:name="com.example.womencentricnetwork.View.MapFragment"
+        android:label="Map"
+        tools:layout="@layout/fragment_map" />
 
     <fragment
         android:id="@+id/chatFragment"
         android:name="com.example.womencentricnetwork.View.ChatScreen"
         android:label="Chat"
-        tools:layout="@layout/fragment_chat" >
-        <action
-            android:id="@+id/action_chatFragment_to_homeFragment"
-            app:destination="@id/homeFragment" />
-        <action
-            android:id="@+id/action_chatFragment_to_communityFragment"
-            app:destination="@id/communityFragment" />
-        <action
-            android:id="@+id/action_chatFragment_to_profileFragment"
-            app:destination="@id/profileFragment" />
-    </fragment>
+        tools:layout="@layout/fragment_chat" />
 
     <fragment
         android:id="@+id/profileFragment"
         android:name="com.example.womencentricnetwork.View.ProfileScreen"
         android:label="Profile"
-        tools:layout="@layout/fragment_profile" >
-        <action
-            android:id="@+id/action_profileFragment_to_homeFragment"
-            app:destination="@id/homeFragment" />
-        <action
-            android:id="@+id/action_profileFragment_to_communityFragment"
-            app:destination="@id/communityFragment" />
-        <action
-            android:id="@+id/action_profileFragment_to_chatFragment"
-            app:destination="@id/chatFragment" />
-    </fragment>
+        tools:layout="@layout/fragment_profile" />
 
     <fragment
         android:id="@+id/communityFragment"
         android:name="com.example.womencentricnetwork.View.CommunityScreen"
         android:label="Community"
-        tools:layout="@layout/fragment_community" >
-        <action
-            android:id="@+id/action_communityFragment_to_homeFragment"
-            app:destination="@id/homeFragment" />
-        <action
-            android:id="@+id/action_communityFragment_to_chatFragment"
-            app:destination="@id/chatFragment" />
-        <action
-            android:id="@+id/action_communityFragment_to_profileFragment"
-            app:destination="@id/profileFragment" />
-    </fragment>
+        tools:layout="@layout/fragment_community" />
 
     <fragment
         android:id="@+id/notificationFragment"
         android:name="com.example.womencentricnetwork.View.NotificationScreen"
-        android:label="Profile"
+        android:label="Notifications"
         tools:layout="@layout/fragment_notification" />
-    <fragment
-        android:id="@+id/settingsFragment"
-        android:name="com.example.womencentricnetwork.View.SettingsScreen"
-        android:label="Settings">
-        <action
-            android:id="@+id/action_settingsFragment_to_loginFragment"
-            app:destination="@id/loginFragment"
-            app:popUpTo="@id/nav_graph"
-            app:popUpToInclusive="true" />
-    </fragment>
-
-    <fragment
-        android:id="@+id/mapFragment"
-        android:name="com.example.womencentricnetwork.View.MapFragment"
-        android:label="Map"
-        tools:layout="@layout/fragment_map"/>
 
 </navigation>

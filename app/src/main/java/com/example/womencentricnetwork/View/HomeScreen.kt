@@ -72,21 +72,6 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
 
         val navController = findNavController()
 
-//        view.findViewById<ImageView>(R.id.navHome).setOnClickListener {
-//            navController.navigate(R.id.homeFragment)
-//        }
-
-        binding.navChat.setOnClickListener {
-            navController.navigate(R.id.chatFragment)
-        }
-
-        binding.navProfile.setOnClickListener {
-            navController.navigate(R.id.profileFragment)
-        }
-
-        binding.navCommunity.setOnClickListener {
-            navController.navigate(R.id.communityFragment)
-        }
 
         binding.navNotification.setOnClickListener {
             navController.navigate(R.id.notificationFragment)
