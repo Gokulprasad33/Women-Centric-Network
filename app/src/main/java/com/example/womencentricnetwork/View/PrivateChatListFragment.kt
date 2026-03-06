@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,6 +46,9 @@ class PrivateChatListFragment : Fragment() {
                                 putString("otherName", otherName)
                             }
                             findNavController().navigate(R.id.privateChatFragment, bundle)
+                        },
+                        onFindUsersClick = {
+                            findNavController().navigate(R.id.userSearchFragment)
                         }
                     )
                 }
@@ -61,7 +66,8 @@ class PrivateChatListFragment : Fragment() {
 fun PrivateChatListScreen(
     firestoreManager: FirestoreManager,
     onRegisterListener: (ListenerRegistration) -> Unit,
-    onChatClick: (chatId: String, otherName: String) -> Unit
+    onChatClick: (chatId: String, otherName: String) -> Unit,
+    onFindUsersClick: () -> Unit = {}
 ) {
     var chats by remember { mutableStateOf<List<PrivateChat>>(emptyList()) }
     val sdf = remember { SimpleDateFormat("MMM dd, hh:mm a", Locale.getDefault()) }
@@ -72,35 +78,49 @@ fun PrivateChatListScreen(
         onDispose { reg.remove() }
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Private Chats", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(16.dp))
-
-        if (chats.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No conversations yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Scaffold(
+        floatingActionButton = {
+            FloatingActionButton(onClick = onFindUsersClick) {
+                Icon(Icons.Default.Add, contentDescription = "Find users")
             }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(chats, key = { it.id }) { chat ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().clickable { onChatClick(chat.id, chat.otherUserName) },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(chat.otherUserName, fontWeight = FontWeight.SemiBold)
-                                if (chat.lastTimestamp > 0) {
-                                    Text(sdf.format(Date(chat.lastTimestamp)),
-                                        style = MaterialTheme.typography.bodySmall,
+        }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+            Text("Private Chats", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+
+            if (chats.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("No conversations yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = onFindUsersClick) {
+                            Text("Find users to chat with")
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(chats, key = { it.id }) { chat ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable { onChatClick(chat.id, chat.otherUserName) },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(chat.otherUserName, fontWeight = FontWeight.SemiBold)
+                                    if (chat.lastTimestamp > 0) {
+                                        Text(sdf.format(Date(chat.lastTimestamp)),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                if (chat.lastMessage.isNotBlank()) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(chat.lastMessage, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                            }
-                            if (chat.lastMessage.isNotBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                Text(chat.lastMessage, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

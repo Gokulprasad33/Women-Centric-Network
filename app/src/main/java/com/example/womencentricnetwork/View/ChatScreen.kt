@@ -36,6 +36,8 @@ class ChatScreen : Fragment(R.layout.fragment_chat) {
     private lateinit var etMessage: EditText
     private lateinit var btnSend: ImageView
     private lateinit var tvEmptyState: TextView
+    private lateinit var tvRoomName: TextView
+    private lateinit var tvMemberCount: TextView
 
     private var messageAdapter: MessageAdapter? = null
     private var messageListener: ListenerRegistration? = null
@@ -59,6 +61,11 @@ class ChatScreen : Fragment(R.layout.fragment_chat) {
         etMessage = view.findViewById(R.id.etMessage)
         btnSend = view.findViewById(R.id.btnSend)
         tvEmptyState = view.findViewById(R.id.tvEmptyState)
+        tvRoomName = view.findViewById(R.id.tvRoomName)
+        tvMemberCount = view.findViewById(R.id.tvMemberCount)
+
+        // Set header
+        tvRoomName.text = "Community: Chennai General"
 
         // Setup RecyclerView
         val currentUserId = auth.currentUser?.uid ?: ""
@@ -77,6 +84,23 @@ class ChatScreen : Fragment(R.layout.fragment_chat) {
 
         // Send button
         btnSend.setOnClickListener { sendMessage() }
+
+        // Diagnostic: verify Firestore can read messages at all
+        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            .collection("messages")
+            .get()
+            .addOnSuccessListener { snap ->
+                Log.d(TAG, "DIAGNOSTIC: Total messages in collection: ${snap.size()}")
+                snap.documents.forEach { doc ->
+                    Log.d(TAG, "DIAGNOSTIC: id=${doc.id}, roomId=${doc.getString("roomId")}, text=${doc.getString("messageText")}")
+                }
+                if (snap.isEmpty) {
+                    Log.w(TAG, "DIAGNOSTIC: messages collection is EMPTY — send a message first")
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "DIAGNOSTIC: Firestore read FAILED — check security rules", e)
+            }
     }
 
     override fun onDestroyView() {
@@ -91,6 +115,17 @@ class ChatScreen : Fragment(R.layout.fragment_chat) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 firestoreManager.ensureChatRoomExists(DEFAULT_ROOM_ID, "Chennai General")
+
+                // Fetch member count from communityRooms doc
+                com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("communityRooms").document(DEFAULT_ROOM_ID)
+                    .get()
+                    .addOnSuccessListener { doc ->
+                        if (isAdded) {
+                            val count = doc.getLong("memberCount")?.toInt() ?: 0
+                            tvMemberCount.text = if (count > 0) "Members: $count" else "Open community"
+                        }
+                    }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to ensure chat room: ${e.message}")
             }

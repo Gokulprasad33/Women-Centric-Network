@@ -7,6 +7,7 @@ import com.example.womencentricnetwork.Model.Incident
 import com.example.womencentricnetwork.Model.Message
 import com.example.womencentricnetwork.Model.PrivateChat
 import com.example.womencentricnetwork.Model.Settings.EmergencyContactEntity
+import com.example.womencentricnetwork.View.UserItem
 import com.example.womencentricnetwork.Model.Settings.SosEventEntity
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -387,56 +388,82 @@ class FirestoreManager {
 
     /**
      * Real-time snapshot listener for messages in a specific room.
-     * Orders by timestamp ascending (oldest first).
-     * Returns [ListenerRegistration] that must be removed when no longer needed.
+     * Tries ordered query first; if composite index is missing, falls back to
+     * unordered query with client-side sorting so messages appear immediately.
      */
     fun listenForMessages(roomId: String, onUpdate: (List<Message>) -> Unit): ListenerRegistration {
         Log.d("CHAT_FIRESTORE", "Starting listener for roomId=$roomId")
 
-        return db.collection("messages")
+        // Helper to parse documents into Message objects
+        fun parseDocs(docs: List<com.google.firebase.firestore.DocumentSnapshot>): List<Message> {
+            return docs.mapNotNull { doc ->
+                try {
+                    val timestamp = doc.getTimestamp("timestamp")
+                    val timestampMillis = timestamp?.toDate()?.time
+                        ?: doc.getLong("timestamp")
+                        ?: System.currentTimeMillis()
+                    Message(
+                        id = doc.id,
+                        senderId = doc.getString("senderId") ?: "",
+                        senderName = doc.getString("senderName") ?: "",
+                        messageText = doc.getString("messageText") ?: "",
+                        roomId = doc.getString("roomId") ?: "",
+                        timestamp = timestampMillis
+                    )
+                } catch (e: Exception) {
+                    Log.e("CHAT_FIRESTORE", "Failed to parse doc ${doc.id}: ${e.message}")
+                    null
+                }
+            }
+        }
+
+        var useFallback = false
+        var fallbackRegistration: ListenerRegistration? = null
+
+        // Primary: ordered query (requires composite index)
+        val primaryRegistration = db.collection("messages")
             .whereEqualTo("roomId", roomId)
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e("CHAT_FIRESTORE", "Query failed: ${error.message}", error)
-                    // If this is an index error, the log message contains the URL to create it
-                    return@addSnapshotListener
-                }
+                    Log.e("CHAT_FIRESTORE", "Ordered query failed: ${error.message}")
 
-                if (snapshot == null) {
-                    Log.w("CHAT_FIRESTORE", "Snapshot is null")
-                    return@addSnapshotListener
-                }
+                    // If index error, switch to fallback (unordered + client sort)
+                    if (!useFallback) {
+                        useFallback = true
+                        Log.w("CHAT_FIRESTORE", "Falling back to unordered query (create the composite index for better performance)")
 
-                Log.d("CHAT_DEBUG", "Snapshot received with ${snapshot.size()} documents")
+                        fallbackRegistration = db.collection("messages")
+                            .whereEqualTo("roomId", roomId)
+                            .addSnapshotListener { fbSnapshot, fbError ->
+                                if (fbError != null) {
+                                    Log.e("CHAT_FIRESTORE", "Fallback query also failed: ${fbError.message}")
+                                    return@addSnapshotListener
+                                }
+                                if (fbSnapshot == null) return@addSnapshotListener
 
-                val messages = snapshot.documents.mapNotNull { doc ->
-                    try {
-                        // Handle null timestamp (serverTimestamp pending)
-                        val timestamp = doc.getTimestamp("timestamp")
-                        val timestampMillis = timestamp?.toDate()?.time
-                            ?: doc.getLong("timestamp")
-                            ?: System.currentTimeMillis()
-
-                        val msg = Message(
-                            id = doc.id,
-                            senderId = doc.getString("senderId") ?: "",
-                            senderName = doc.getString("senderName") ?: "",
-                            messageText = doc.getString("messageText") ?: "",
-                            roomId = doc.getString("roomId") ?: "",
-                            timestamp = timestampMillis
-                        )
-                        Log.d("CHAT_DEBUG", "Message: ${msg.senderName}: ${msg.messageText}")
-                        msg
-                    } catch (e: Exception) {
-                        Log.e("CHAT_FIRESTORE", "Failed to parse doc ${doc.id}: ${e.message}")
-                        null
+                                Log.d("CHAT_DEBUG", "Fallback snapshot: ${fbSnapshot.size()} documents")
+                                val messages = parseDocs(fbSnapshot.documents).sortedBy { it.timestamp }
+                                onUpdate(messages)
+                            }
                     }
+                    return@addSnapshotListener
                 }
 
-                Log.d("CHAT_DEBUG", "Parsed ${messages.size} messages, sending to UI")
+                if (snapshot == null) return@addSnapshotListener
+
+                Log.d("CHAT_DEBUG", "Ordered snapshot: ${snapshot.size()} documents")
+                val messages = parseDocs(snapshot.documents)
                 onUpdate(messages)
             }
+
+        // Return a composite registration that cleans up both listeners
+        return object : ListenerRegistration {
+            override fun remove() {
+                primaryRegistration.remove()
+                fallbackRegistration?.remove()
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -561,30 +588,73 @@ class FirestoreManager {
     }
 
     fun listenForCommunityMessages(communityId: String, onUpdate: (List<Message>) -> Unit): ListenerRegistration {
-        return db.collection("communityMessages")
+        fun parseDocs(docs: List<com.google.firebase.firestore.DocumentSnapshot>): List<Message> {
+            return docs.mapNotNull { doc ->
+                try {
+                    val ts = doc.getTimestamp("timestamp")?.toDate()?.time
+                        ?: doc.getLong("timestamp") ?: System.currentTimeMillis()
+                    Message(
+                        id = doc.id,
+                        senderId = doc.getString("senderId") ?: "",
+                        senderName = doc.getString("senderName") ?: "",
+                        messageText = doc.getString("messageText") ?: "",
+                        roomId = doc.getString("communityId") ?: "",
+                        timestamp = ts
+                    )
+                } catch (e: Exception) { null }
+            }
+        }
+
+        var useFallback = false
+        var fallbackReg: ListenerRegistration? = null
+
+        val primaryReg = db.collection("communityMessages")
             .whereEqualTo("communityId", communityId)
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e("Firestore", "Community messages listen failed", error)
+                    Log.e("Firestore", "Community messages ordered query failed: ${error.message}")
+                    if (!useFallback) {
+                        useFallback = true
+                        fallbackReg = db.collection("communityMessages")
+                            .whereEqualTo("communityId", communityId)
+                            .addSnapshotListener { fbSnap, fbErr ->
+                                if (fbErr != null || fbSnap == null) return@addSnapshotListener
+                                onUpdate(parseDocs(fbSnap.documents).sortedBy { it.timestamp })
+                            }
+                    }
                     return@addSnapshotListener
                 }
-                val messages = snapshot?.documents?.mapNotNull { doc ->
-                    try {
-                        val ts = doc.getTimestamp("timestamp")?.toDate()?.time
-                            ?: doc.getLong("timestamp") ?: System.currentTimeMillis()
-                        Message(
-                            id = doc.id,
-                            senderId = doc.getString("senderId") ?: "",
-                            senderName = doc.getString("senderName") ?: "",
-                            messageText = doc.getString("messageText") ?: "",
-                            roomId = doc.getString("communityId") ?: "",
-                            timestamp = ts
-                        )
-                    } catch (e: Exception) { null }
-                } ?: emptyList()
-                onUpdate(messages)
+                onUpdate(parseDocs(snapshot?.documents ?: emptyList()))
             }
+
+        return object : ListenerRegistration {
+            override fun remove() { primaryReg.remove(); fallbackReg?.remove() }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // User Discovery
+    // ═══════════════════════════════════════════════════════════════════
+
+    /** Fetch all registered users from Firestore. */
+    suspend fun getAllUsers(): Result<List<UserItem>> {
+        return try {
+            val snapshot = db.collection("users").get().await()
+            val users = snapshot.documents.mapNotNull { doc ->
+                try {
+                    UserItem(
+                        uid = doc.id,
+                        name = doc.getString("name") ?: "",
+                        email = doc.getString("email") ?: ""
+                    )
+                } catch (e: Exception) { null }
+            }
+            Result.success(users)
+        } catch (e: Exception) {
+            Log.e("Firestore", "getAllUsers failed: ${e.message}")
+            Result.failure(e)
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -679,30 +749,49 @@ class FirestoreManager {
     }
 
     fun listenForPrivateMessages(chatId: String, onUpdate: (List<Message>) -> Unit): ListenerRegistration {
-        return db.collection("privateMessages")
+        fun parseDocs(docs: List<com.google.firebase.firestore.DocumentSnapshot>): List<Message> {
+            return docs.mapNotNull { doc ->
+                try {
+                    val ts = doc.getTimestamp("timestamp")?.toDate()?.time
+                        ?: doc.getLong("timestamp") ?: System.currentTimeMillis()
+                    Message(
+                        id = doc.id,
+                        senderId = doc.getString("senderId") ?: "",
+                        senderName = doc.getString("senderName") ?: "",
+                        messageText = doc.getString("messageText") ?: "",
+                        roomId = chatId,
+                        timestamp = ts
+                    )
+                } catch (e: Exception) { null }
+            }
+        }
+
+        var useFallback = false
+        var fallbackReg: ListenerRegistration? = null
+
+        val primaryReg = db.collection("privateMessages")
             .whereEqualTo("chatId", chatId)
             .orderBy("timestamp", Query.Direction.ASCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e("Firestore", "Private messages listen failed", error)
+                    Log.e("Firestore", "Private messages ordered query failed: ${error.message}")
+                    if (!useFallback) {
+                        useFallback = true
+                        fallbackReg = db.collection("privateMessages")
+                            .whereEqualTo("chatId", chatId)
+                            .addSnapshotListener { fbSnap, fbErr ->
+                                if (fbErr != null || fbSnap == null) return@addSnapshotListener
+                                onUpdate(parseDocs(fbSnap.documents).sortedBy { it.timestamp })
+                            }
+                    }
                     return@addSnapshotListener
                 }
-                val messages = snapshot?.documents?.mapNotNull { doc ->
-                    try {
-                        val ts = doc.getTimestamp("timestamp")?.toDate()?.time
-                            ?: doc.getLong("timestamp") ?: System.currentTimeMillis()
-                        Message(
-                            id = doc.id,
-                            senderId = doc.getString("senderId") ?: "",
-                            senderName = doc.getString("senderName") ?: "",
-                            messageText = doc.getString("messageText") ?: "",
-                            roomId = chatId,
-                            timestamp = ts
-                        )
-                    } catch (e: Exception) { null }
-                } ?: emptyList()
-                onUpdate(messages)
+                onUpdate(parseDocs(snapshot?.documents ?: emptyList()))
             }
+
+        return object : ListenerRegistration {
+            override fun remove() { primaryReg.remove(); fallbackReg?.remove() }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════

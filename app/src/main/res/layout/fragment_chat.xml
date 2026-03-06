@@ -12,10 +12,10 @@
     <LinearLayout
         android:id="@+id/chatHeader"
         android:layout_width="0dp"
-        android:layout_height="56dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:paddingHorizontal="16dp"
+        android:paddingVertical="10dp"
         android:background="#6200EE"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -25,10 +25,18 @@
             android:id="@+id/tvRoomName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Community Chat"
-            android:textSize="20sp"
+            android:text="Community: Chennai General"
+            android:textSize="18sp"
             android:textStyle="bold"
             android:textColor="#FFFFFF" />
+
+        <TextView
+            android:id="@+id/tvMemberCount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Loading members..."
+            android:textSize="13sp"
+            android:textColor="#CCCCCC" />
 
     </LinearLayout>
 
