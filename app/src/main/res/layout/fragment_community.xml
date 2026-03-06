@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".View.CommunityScreen">
+
+    <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+
+
+        <LinearLayout
+            android:id="@+id/bottomNav"
+            android:layout_alignParentBottom="true"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:layout_width="match_parent"
+            android:layout_height="60dp">
+
+            <ImageView
+                android:id="@+id/navHome"
+                android:src="@drawable/home_24px"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:tint="#808080" />
+
+            <Space android:layout_width="60dp" android:layout_height="0dp" />
+
+            <ImageView
+                android:id="@+id/navChat"
+                android:src="@drawable/chat_24px"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:tint="#808080" />
+
+            <Space android:layout_width="60dp" android:layout_height="0dp" />
+
+            <ImageView
+                android:id="@+id/navProfile"
+                android:src="@drawable/person_24px"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:tint="#000" />
+
+            <Space android:layout_width="60dp" android:layout_height="0dp" />
+
+            <ImageView
+                android:id="@+id/navCommunity"
+                android:src="@drawable/diversity_3_24px"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:tint="#808080" />
+        </LinearLayout>
+
+    </RelativeLayout>
+
+
+</androidx.constraintlayout.widget.ConstraintLayout>

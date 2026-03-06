@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/chat"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".View.ChatScreen">
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:text="Chat"
+                android:textSize="32sp"
+                android:textStyle="bold"
+                android:layout_weight="1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content" />
+
+        </LinearLayout>
+
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:padding="20dp"
+                android:layout_marginTop="20dp">
+
+                <LinearLayout
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content">
+
+<!--                    <ImageView-->
+<!--                        android:layout_width="60dp"-->
+<!--                        android:layout_height="60dp"-->
+<!--                        android:scaleType="centerCrop"-->
+<!--                        android:src="@drawable/profile1"-->
+<!--                        android:background="@drawable/circle_mask" />-->
+
+<!--                    <TextView-->
+<!--                        android:text="Kevin"-->
+<!--                        android:textSize="12sp"-->
+<!--                        android:layout_marginTop="4dp" />-->
+                </LinearLayout>
+
+                <Space android:layout_width="16dp" android:layout_height="0dp" />
+
+                <LinearLayout
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content">
+
+<!--                    <ImageView-->
+<!--                        android:layout_width="60dp"-->
+<!--                        android:layout_height="60dp"-->
+<!--                        android:scaleType="centerCrop"-->
+<!--                        android:src="@drawable/profile2"-->
+<!--                        android:background="@drawable/circle_mask" />-->
+
+<!--                    <TextView-->
+<!--                        android:text="Amber"-->
+<!--                        android:textSize="12sp"-->
+<!--                        android:layout_marginTop="4dp" />-->
+                </LinearLayout>
+
+                <Space android:layout_width="16dp" android:layout_height="0dp" />
+
+                <LinearLayout
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content">
+
+<!--                    <ImageView-->
+<!--                        android:layout_width="60dp"-->
+<!--                        android:layout_height="60dp"-->
+<!--                        android:src="@drawable/profile3"-->
+<!--                        android:background="@drawable/circle_mask" />-->
+
+<!--                    <TextView-->
+<!--                        android:text="Rasheed a Josh"-->
+<!--                        android:textSize="12sp"-->
+<!--                        android:layout_marginTop="4dp"-->
+<!--                        android:layout_height=""-->
+<!--                        android:layout_width=""/>-->
+                </LinearLayout>
+
+                <Space android:layout_width="16dp" android:layout_height="0dp" />
+
+                <LinearLayout
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content">
+
+<!--                    <ImageView-->
+<!--                        android:layout_width="60dp"-->
+<!--                        android:layout_height="60dp"-->
+<!--                        android:src="@drawable/profile4"-->
+<!--                        android:background="@drawable/circle_mask" />-->
+
+<!--                    <TextView-->
+<!--                        android:text="Jacob"-->
+<!--                        android:textSize="12sp"-->
+<!--                        android:layout_marginTop="4dp" />-->
+                </LinearLayout>
+
+
+            </LinearLayout>
+
+
+
+
+        </ScrollView>
+
+        <LinearLayout
+            android:id="@+id/bottomNav"
+            android:layout_alignParentBottom="true"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:background="#FFFFFF"
+            android:padding="12dp"
+            android:layout_width="match_parent"
+            android:layout_height="60dp">
+
+
+            <ImageView
+                android:id="@+id/navHome"
+                android:src="@drawable/home_24px"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:tint="#000"
+                android:background="?attr/selectableItemBackground"/>
+
+            <Space android:layout_width="60dp" android:layout_height="0dp" />
+
+            <ImageView
+                android:id="@+id/navChat"
+                android:src="@drawable/chat_24px"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:tint="#808080"
+                android:background="?attr/selectableItemBackground"/>
+
+            <Space android:layout_width="60dp" android:layout_height="0dp" />
+
+            <ImageView
+                android:id="@+id/navProfile"
+                android:src="@drawable/person_24px"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:tint="#808080" />
+
+            <Space android:layout_width="60dp" android:layout_height="0dp" />
+
+            <ImageView
+                android:id="@+id/navCommunity"
+                android:src="@drawable/diversity_3_24px"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:tint="#808080" />
+        </LinearLayout>
+
+    </RelativeLayout>
+
+
+
+</androidx.constraintlayout.widget.ConstraintLayout>
