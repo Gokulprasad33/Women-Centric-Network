@@ -1,8 +1,10 @@
 package com.example.womencentricnetwork.Model
 
 /**
- * Represents an in-app SOS alert broadcast.
- * Stored in Firestore: sosAlerts/{alertId}
+ * Represents an in-app alert broadcast.
+ * Stored in Firestore: alerts/{alertId}
+ *
+ * Types: SOS, NETWORK_ALERT
  */
 data class SosAlert(
     val id: String = "",
@@ -10,6 +12,13 @@ data class SosAlert(
     val name: String = "",
     val lat: Double = 0.0,
     val lon: Double = 0.0,
-    val timestamp: Long = 0L
+    val type: String = "SOS",
+    val message: String = "",
+    val timestamp: Long = 0L,
+    val active: Boolean = true
 )
 
+enum class AlertType {
+    SOS,
+    NETWORK_ALERT
+}

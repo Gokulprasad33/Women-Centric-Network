@@ -1,5 +1,7 @@
 package com.example.womencentricnetwork.View
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -23,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -278,6 +281,7 @@ fun PresenceAvatarItem(presence: UserPresence) {
 
 @Composable
 fun SosAlertCard(alert: SosAlert, sdf: SimpleDateFormat) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3F0)),
@@ -306,6 +310,28 @@ fun SosAlertCard(alert: SosAlert, sdf: SimpleDateFormat) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+            // Navigate button
+            if (alert.lat != 0.0 && alert.lon != 0.0) {
+                FilledTonalButton(
+                    onClick = {
+                        val uri = Uri.parse("google.navigation:q=${alert.lat},${alert.lon}&mode=w")
+                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                            setPackage("com.google.android.apps.maps")
+                        }
+                        try { context.startActivity(intent) } catch (_: Exception) {
+                            val webUri = Uri.parse("https://maps.google.com/?q=${alert.lat},${alert.lon}")
+                            context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                        }
+                    },
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = Color(0xFFF44336),
+                        contentColor = Color.White
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                ) {
+                    Text("Navigate", fontSize = 11.sp)
                 }
             }
         }

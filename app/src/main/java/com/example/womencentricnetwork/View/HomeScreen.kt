@@ -3,6 +3,7 @@ package com.example.womencentricnetwork.View
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -13,15 +14,22 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.app.ActivityCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.example.womencentricnetwork.Firebase.FirestoreManager
+import com.example.womencentricnetwork.Firebase.NotificationHelper
 import com.example.womencentricnetwork.Model.AppDatabase
+import com.example.womencentricnetwork.Model.SafetyState
 import com.example.womencentricnetwork.Model.Settings.EmergencyContactEntity
 import com.example.womencentricnetwork.Model.Settings.SettingsPreferencesDataStore
 import com.example.womencentricnetwork.Model.Settings.SosEventEntity
+import com.example.womencentricnetwork.Model.SosAlert
+import com.example.womencentricnetwork.Model.UserPresence
 import com.example.womencentricnetwork.R
 import com.example.womencentricnetwork.Repository.SafePlaceRepository
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -30,6 +38,8 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -58,6 +68,17 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private val sosTimeoutHandler = Handler(Looper.getMainLooper())
     private val SOS_TIMEOUT_MS = 10L * 60 * 1000  // 10 minutes auto-stop
     private val sosTimeoutRunnable = Runnable { stopLiveLocationTracking() }
+
+    // ── Safety Network State ──────────────────────────────────────────────
+    private var presenceListener: ListenerRegistration? = null
+    private var sosAlertListener: ListenerRegistration? = null
+    private var latestAlertListener: ListenerRegistration? = null
+    private val presenceState = mutableStateOf<List<UserPresence>>(emptyList())
+    private val sosAlertsState = mutableStateOf<List<SosAlert>>(emptyList())
+    private val latestAlertState = mutableStateOf<SosAlert?>(null)
+    private val userLatState = mutableStateOf<Double?>(null)
+    private val userLonState = mutableStateOf<Double?>(null)
+    private val notificationHelper by lazy { NotificationHelper(requireContext()) }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -121,6 +142,30 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             stopLiveLocationTracking()
         }
 
+        // ── Alert Network Button ─────────────────────────────────────
+        binding.btnAlertNetwork.setOnClickListener {
+            sendSoftAlert()
+        }
+
+        // ── Set greeting from Firestore user profile ─────────────────
+        viewLifecycleOwner.lifecycleScope.launch {
+            val displayName = firestoreManager.getUserDisplayName()
+            if (_binding != null) {
+                binding.tvGreeting.text = "Hi, $displayName!"
+            }
+        }
+
+        // ── Setup Compose views for Safety Network ───────────────────
+        setupLatestAlertBanner()
+        setupFriendStatusRow()
+        setupNearbyHelpersSection()
+
+        // ── Start Firestore listeners ────────────────────────────────
+        startPresenceListener()
+        startSosAlertListener()
+        startLatestAlertListener()
+        fetchUserLocation()
+
         // ── Firebase: Test connection & register FCM token ──────────
         testFirebaseConnection()
         registerFcmToken()
@@ -131,7 +176,140 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                 safePlaceRepository.preload()
             }
         }
+    }
+
+    // ── Safety Network: Latest Alert Banner (Compose) ──────────────────
+
+    private fun setupLatestAlertBanner() {
+        binding.latestAlertComposeView.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                MaterialTheme {
+                    val alert by latestAlertState
+                    val userLat by userLatState
+                    val userLon by userLonState
+                    LatestAlertBanner(
+                        latestAlert = alert,
+                        userLat = userLat,
+                        userLon = userLon
+                    )
+                }
+            }
         }
+    }
+
+    // ── Safety Network: Friend Status Row (Compose) ──────────────────────
+
+    private fun setupFriendStatusRow() {
+        binding.friendStatusComposeView.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                MaterialTheme {
+                    val presence by presenceState
+                    val userLat by userLatState
+                    val userLon by userLonState
+                    FriendStatusRow(
+                        presenceList = presence,
+                        userLat = userLat,
+                        userLon = userLon
+                    )
+                }
+            }
+        }
+    }
+
+    // ── Safety Network: Nearby Helpers Section (Compose) ─────────────────
+
+    private fun setupNearbyHelpersSection() {
+        binding.nearbyHelpersComposeView.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                MaterialTheme {
+                    val presence by presenceState
+                    val userLat by userLatState
+                    val userLon by userLonState
+                    NearbyHelpersSection(
+                        presenceList = presence,
+                        userLat = userLat,
+                        userLon = userLon
+                    )
+                }
+            }
+        }
+    }
+
+    // ── Firestore Listeners ──────────────────────────────────────────────
+
+    private fun startPresenceListener() {
+        presenceListener = firestoreManager.listenForPresence { list ->
+            presenceState.value = list
+            // Check for nearby SOS users and show notification
+            checkForNearbySosUsers(list)
+        }
+    }
+
+    private fun startSosAlertListener() {
+        sosAlertListener = firestoreManager.listenForSosAlerts { alerts ->
+            sosAlertsState.value = alerts
+        }
+    }
+
+    private fun startLatestAlertListener() {
+        latestAlertListener = firestoreManager.listenForLatestAlert { alert ->
+            latestAlertState.value = alert
+        }
+    }
+
+    private fun fetchUserLocation() {
+        if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) return
+
+        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+            if (location != null) {
+                userLatState.value = location.latitude
+                userLonState.value = location.longitude
+            }
+        }
+    }
+
+    // ── Nearby SOS Detection + Notification ──────────────────────────────
+
+    private fun checkForNearbySosUsers(presenceList: List<UserPresence>) {
+        val lat = userLatState.value ?: return
+        val lon = userLonState.value ?: return
+
+        presenceList.filter { it.safetyStateEnum == SafetyState.SOS && it.lat != 0.0 && it.lon != 0.0 }
+            .forEach { user ->
+                val results = FloatArray(1)
+                Location.distanceBetween(lat, lon, user.lat, user.lon, results)
+                if (results[0] <= 1000f) {
+                    notificationHelper.showNearbyAlert(
+                        title = "Emergency nearby",
+                        body = "${user.name} needs help — ${"%.0f".format(results[0])}m away",
+                        notificationId = user.uid.hashCode()
+                    )
+                }
+            }
+    }
+
+    // ── Soft Alert to Nearby Users ───────────────────────────────────────
+
+    private fun sendSoftAlert() {
+        fetchLocation { lat, lon ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    // Update presence to OUTSIDE to signal alertness
+                    firestoreManager.updateSafetyState(SafetyState.OUTSIDE)
+                    // Create a non-SOS alert document for nearby awareness
+                    firestoreManager.createSosAlert(lat, lon, type = "NETWORK_ALERT")
+                    Toast.makeText(context, "Alert sent to nearby users", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Log.e("HomeFragment", "Soft alert failed: ${e.message}")
+                    Toast.makeText(context, "Failed to send alert", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
 
     // ── Core SOS Flow ────────────────────────────────────────────────────
@@ -293,7 +471,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     // ── Auto-call Emergency Number ──────────────────────────────────────
 
     private fun callEmergencyNumber() {
-        val emergencyNumber = "112"
+        val emergencyNumber = "181"
         if (ActivityCompat.checkSelfPermission(
                 requireContext(), Manifest.permission.CALL_PHONE
             ) == PackageManager.PERMISSION_GRANTED
@@ -627,6 +805,13 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             fusedLocationClient.removeLocationUpdates(it)
         }
         sosTimeoutHandler.removeCallbacks(sosTimeoutRunnable)
+        // Clean up Firestore listeners
+        presenceListener?.remove()
+        presenceListener = null
+        sosAlertListener?.remove()
+        sosAlertListener = null
+        latestAlertListener?.remove()
+        latestAlertListener = null
         _binding = null
     }
 

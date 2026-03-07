@@ -277,14 +277,34 @@ class FirestoreManager {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // In-App SOS Alerts (sosAlerts/{alertId})
+    // In-App Alerts (sosAlerts/{alertId})
     // ═══════════════════════════════════════════════════════════════════
 
     /**
-     * Create an SOS alert when SOS is triggered.
-     * This broadcasts the alert to all nearby users.
+     * Fetch the current user's display name from Firestore users/{uid}.
+     * Falls back to email prefix if name is empty/null.
      */
-    suspend fun createSosAlert(lat: Double, lon: Double): Result<String> {
+    suspend fun getUserDisplayName(): String {
+        val user = auth.currentUser ?: return "there"
+        return try {
+            val doc = db.collection("users").document(user.uid).get().await()
+            val name = doc.getString("name")
+            if (!name.isNullOrBlank()) name
+            else user.email?.substringBefore("@") ?: "there"
+        } catch (e: Exception) {
+            user.email?.substringBefore("@") ?: "there"
+        }
+    }
+
+    /**
+     * Create an alert when SOS or Network Alert is triggered.
+     */
+    suspend fun createSosAlert(
+        lat: Double,
+        lon: Double,
+        type: String = "SOS",
+        message: String = ""
+    ): Result<String> {
         val user = auth.currentUser ?: return Result.failure(Exception("Not logged in"))
         return try {
             val senderName = try {
@@ -297,13 +317,67 @@ class FirestoreManager {
                 "name" to senderName,
                 "lat" to lat,
                 "lon" to lon,
-                "timestamp" to System.currentTimeMillis()
+                "type" to type,
+                "message" to message,
+                "timestamp" to System.currentTimeMillis(),
+                "active" to true
             )
             val docRef = db.collection("sosAlerts").add(data).await()
             Result.success(docRef.id)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * Listen for the single latest active alert (for Home screen banner).
+     * Only returns alerts from the last 10 minutes.
+     */
+    fun listenForLatestAlert(onUpdate: (SosAlert?) -> Unit): ListenerRegistration {
+        val cutoff = System.currentTimeMillis() - (10 * 60 * 1000) // 10 minutes
+        return db.collection("sosAlerts")
+            .whereGreaterThan("timestamp", cutoff)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreManager", "Latest alert listen failed: ${error.message}")
+                    onUpdate(null)
+                    return@addSnapshotListener
+                }
+                val currentUid = uid
+                val latest = snapshot?.documents
+                    ?.mapNotNull { parseSosAlert(it) }
+                    ?.filter { it.active && it.uid != currentUid }
+                    ?.maxByOrNull { it.timestamp }
+                onUpdate(latest)
+            }
+    }
+
+    /**
+     * Listen for all alerts (for Notifications page) — last 24 hours.
+     */
+    fun listenForAllAlerts(onUpdate: (List<SosAlert>) -> Unit): ListenerRegistration {
+        val cutoff = System.currentTimeMillis() - (24 * 60 * 60 * 1000) // 24 hours
+        return db.collection("sosAlerts")
+            .whereGreaterThan("timestamp", cutoff)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreManager", "Alerts listen failed: ${error.message}")
+                    // Fallback unordered
+                    db.collection("sosAlerts")
+                        .addSnapshotListener { fbSnap, fbErr ->
+                            if (fbErr != null || fbSnap == null) return@addSnapshotListener
+                            val alerts = fbSnap.documents.mapNotNull { parseSosAlert(it) }
+                                .filter { it.timestamp > cutoff }
+                                .sortedByDescending { it.timestamp }
+                            onUpdate(alerts)
+                        }
+                    return@addSnapshotListener
+                }
+                val alerts = snapshot?.documents
+                    ?.mapNotNull { parseSosAlert(it) }
+                    ?.sortedByDescending { it.timestamp } ?: emptyList()
+                onUpdate(alerts)
+            }
     }
 
     /**
@@ -335,6 +409,15 @@ class FirestoreManager {
             }
     }
 
+    /** Mark an alert as no longer active. */
+    fun markAlertViewed(alertId: String) {
+        db.collection("sosAlerts").document(alertId)
+            .update("active", false)
+            .addOnFailureListener { e ->
+                Log.e("FirestoreManager", "Mark alert viewed failed: ${e.message}")
+            }
+    }
+
     private fun parseSosAlert(doc: com.google.firebase.firestore.DocumentSnapshot): SosAlert? {
         return try {
             SosAlert(
@@ -343,7 +426,10 @@ class FirestoreManager {
                 name = doc.getString("name") ?: "",
                 lat = doc.getDouble("lat") ?: 0.0,
                 lon = doc.getDouble("lon") ?: 0.0,
-                timestamp = doc.getLong("timestamp") ?: 0L
+                type = doc.getString("type") ?: "SOS",
+                message = doc.getString("message") ?: "",
+                timestamp = doc.getLong("timestamp") ?: 0L,
+                active = doc.getBoolean("active") ?: true
             )
         } catch (e: Exception) { null }
     }

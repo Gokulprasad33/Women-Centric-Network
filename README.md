@@ -1,7 +1,7 @@
 # Women Centric Network — Project Evaluation Report
 
 **Date:** March 7, 2026
-**Total Kotlin source files:** 46 | **Total lines:** ~6,800+
+**Total Kotlin source files:** 47 | **Total lines:** ~7,200+
 
 ---
 
@@ -327,7 +327,8 @@ app/src/main/java/com/example/womencentricnetwork/
 └── View/
     ├── LoginFragment.kt
     ├── RegisterFragment.kt
-    ├── HomeScreen.kt                       # SOS + live tracking + SOS alert broadcasting + presence update
+    ├── HomeScreen.kt                       # SOS + live tracking + SOS alerts + presence + Safety Network
+    ├── HomeSafetyNetworkUI.kt              # NEW — Compose UI: FriendStatusRow, NearbyHelpers, SosAlertCardWithNav
     ├── SafeRouteFragment.kt
     ├── PrivateChatListFragment.kt          # REDESIGNED — 3 sections: People Nearby / SOS Alerts / Chats
     ├── PrivateChatFragment.kt
@@ -538,6 +539,49 @@ Call emergency number (112)
 - Original checklist: **83% → 88%**
 - Core features (excluding AI/Hardware/Accessibility): **96% → 100%**
 - New features added: **10 (Presence System section)**
+
+---
+
+### Safety Network System (Phase 7b)
+
+| Component | Change |
+|---|---|
+| **NEW** `View/HomeSafetyNetworkUI.kt` | Compose composables: `FriendStatusRow` (horizontal avatars with distance), `NearbyHelpersSection` (users within 1km), `SosAlertCardWithNav` (Navigate button to route to victim), `NearbyHelperCard` (safety-colored distance badge) |
+| `res/layout/fragment_home.xml` | Redesigned: added `friendStatusComposeView`, `nearbyHelpersComposeView`, `btnAlertNetwork`, `tvGreeting` with dynamic name; improved button layout with equal weights |
+| `View/HomeScreen.kt` | Added: presence/SOS listeners, `setupFriendStatusRow()`, `setupNearbyHelpersSection()`, `checkForNearbySosUsers()` (nearby notification), `sendSoftAlert()`, Firebase user greeting, `fetchUserLocation()` for distance calculation |
+| `View/PrivateChatListFragment.kt` | SOS Alert cards now include **Navigate** button → opens Google Maps walking route to victim's location |
+
+### Home Screen Layout (Updated)
+
+```
+┌──────────────────────────────────┐
+│  Home            🔔  ⚙️          │
+│  Hi, Username!                   │
+│  Your security dashboard         │
+│                                  │
+│  ── Friends Nearby ──            │
+│  [ 🟢 Priya ]  [ 🟠 Arjun ]    │  ← horizontal scroll
+│  "At College"   "Going Home"     │
+│     200m           1.2km         │
+│                                  │
+│         ┌─────────┐              │
+│         │   SOS   │              │
+│         └─────────┘              │
+│                                  │
+│  ⚠️ Alert Nearby Users          │  ← soft alert button
+│                                  │
+│  [ Map ] [ Share Location ]      │
+│  [ Report ] [ Safe Space ]       │
+│                                  │
+│  ── 🚨 Active SOS Alerts ──     │
+│  Priya needs help!  [Navigate]   │
+│     2m ago • 450m away           │
+│                                  │
+│  ── 🛡️ Nearby Helpers (3) ──   │
+│  🟢 Arjun  "At College"   200m  │
+│  🟠 Meera  "Going Home"   800m  │
+└──────────────────────────────────┘
+```
 
 ---
 
