@@ -111,4 +111,9 @@
         android:label="Notifications"
         tools:layout="@layout/fragment_notification" />
 
+    <fragment
+        android:id="@+id/safeRouteFragment"
+        android:name="com.example.womencentricnetwork.View.SafeRouteMapFragment"
+        android:label="Safe Route" />
+
 </navigation>

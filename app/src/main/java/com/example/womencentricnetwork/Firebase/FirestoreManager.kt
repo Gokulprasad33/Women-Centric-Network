@@ -6,6 +6,9 @@ import com.example.womencentricnetwork.Model.Community
 import com.example.womencentricnetwork.Model.Incident
 import com.example.womencentricnetwork.Model.Message
 import com.example.womencentricnetwork.Model.PrivateChat
+import com.example.womencentricnetwork.Model.SafetyState
+import com.example.womencentricnetwork.Model.SosAlert
+import com.example.womencentricnetwork.Model.UserPresence
 import com.example.womencentricnetwork.Model.Settings.EmergencyContactEntity
 import com.example.womencentricnetwork.View.UserItem
 import com.example.womencentricnetwork.Model.Settings.SosEventEntity
@@ -137,6 +140,324 @@ class FirestoreManager {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Presence System (presence/{uid})
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Update the current user's presence document.
+     * Called every 15 seconds when live location is enabled,
+     * or on safety state changes.
+     */
+    fun updatePresence(
+        name: String,
+        status: String = "",
+        safetyState: SafetyState = SafetyState.SAFE,
+        liveLocationEnabled: Boolean = false,
+        lat: Double = 0.0,
+        lon: Double = 0.0
+    ) {
+        val userId = uid ?: return
+        val data = hashMapOf(
+            "uid" to userId,
+            "name" to name,
+            "status" to status.take(60),
+            "safetyState" to safetyState.name,
+            "liveLocationEnabled" to liveLocationEnabled,
+            "lat" to lat,
+            "lon" to lon,
+            "lastUpdated" to System.currentTimeMillis()
+        )
+        db.collection("presence").document(userId)
+            .set(data, SetOptions.merge())
+            .addOnFailureListener { e ->
+                Log.e("FirestoreManager", "Presence update failed: ${e.message}")
+            }
+    }
+
+    /** Update only the safety state of the current user. */
+    fun updateSafetyState(safetyState: SafetyState) {
+        val userId = uid ?: return
+        db.collection("presence").document(userId)
+            .update(mapOf(
+                "safetyState" to safetyState.name,
+                "lastUpdated" to System.currentTimeMillis()
+            ))
+            .addOnFailureListener { e ->
+                Log.e("FirestoreManager", "Safety state update failed: ${e.message}")
+            }
+    }
+
+    /** Update only the user's short status message (Instagram Notes style). */
+    fun updateUserStatus(status: String) {
+        val userId = uid ?: return
+        db.collection("presence").document(userId)
+            .update(mapOf(
+                "status" to status.take(60),
+                "lastUpdated" to System.currentTimeMillis()
+            ))
+            .addOnFailureListener { e ->
+                Log.e("FirestoreManager", "Status update failed: ${e.message}")
+            }
+    }
+
+    /** Set presence to OFFLINE (call on logout or app close). */
+    fun goOffline() {
+        val userId = uid ?: return
+        db.collection("presence").document(userId)
+            .update(mapOf(
+                "safetyState" to SafetyState.OFFLINE.name,
+                "liveLocationEnabled" to false,
+                "lastUpdated" to System.currentTimeMillis()
+            ))
+            .addOnFailureListener { e ->
+                Log.e("FirestoreManager", "Go offline failed: ${e.message}")
+            }
+    }
+
+    /**
+     * Listen for all presence documents (for map + chat nearby display).
+     * Returns only users who updated within the last 30 minutes.
+     */
+    fun listenForPresence(onUpdate: (List<UserPresence>) -> Unit): ListenerRegistration {
+        return db.collection("presence")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreManager", "Presence listen failed: ${error.message}")
+                    return@addSnapshotListener
+                }
+                val cutoff = System.currentTimeMillis() - (30 * 60 * 1000) // 30 min
+                val currentUid = uid ?: ""
+                val presenceList = snapshot?.documents?.mapNotNull { doc ->
+                    try {
+                        val lastUpdated = doc.getLong("lastUpdated") ?: 0L
+                        // Skip stale entries (>30 min) and self
+                        if (lastUpdated < cutoff && doc.getString("safetyState") != SafetyState.SOS.name) return@mapNotNull null
+                        if (doc.id == currentUid) return@mapNotNull null
+                        UserPresence(
+                            uid = doc.id,
+                            name = doc.getString("name") ?: "",
+                            status = doc.getString("status") ?: "",
+                            liveLocationEnabled = doc.getBoolean("liveLocationEnabled") ?: false,
+                            lat = doc.getDouble("lat") ?: 0.0,
+                            lon = doc.getDouble("lon") ?: 0.0,
+                            lastUpdated = lastUpdated,
+                            safetyState = doc.getString("safetyState") ?: SafetyState.OFFLINE.name
+                        )
+                    } catch (e: Exception) { null }
+                } ?: emptyList()
+                onUpdate(presenceList)
+            }
+    }
+
+    /**
+     * Get the current user's presence document (one-time read).
+     */
+    suspend fun getMyPresence(): UserPresence? {
+        val userId = uid ?: return null
+        return try {
+            val doc = db.collection("presence").document(userId).get().await()
+            if (!doc.exists()) return null
+            UserPresence(
+                uid = doc.id,
+                name = doc.getString("name") ?: "",
+                status = doc.getString("status") ?: "",
+                liveLocationEnabled = doc.getBoolean("liveLocationEnabled") ?: false,
+                lat = doc.getDouble("lat") ?: 0.0,
+                lon = doc.getDouble("lon") ?: 0.0,
+                lastUpdated = doc.getLong("lastUpdated") ?: 0L,
+                safetyState = doc.getString("safetyState") ?: SafetyState.OFFLINE.name
+            )
+        } catch (e: Exception) {
+            Log.e("FirestoreManager", "getMyPresence failed: ${e.message}")
+            null
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // In-App SOS Alerts (sosAlerts/{alertId})
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Create an SOS alert when SOS is triggered.
+     * This broadcasts the alert to all nearby users.
+     */
+    suspend fun createSosAlert(lat: Double, lon: Double): Result<String> {
+        val user = auth.currentUser ?: return Result.failure(Exception("Not logged in"))
+        return try {
+            val senderName = try {
+                db.collection("users").document(user.uid).get().await()
+                    .getString("name") ?: (user.email ?: "User")
+            } catch (e: Exception) { user.email ?: "User" }
+
+            val data = hashMapOf(
+                "uid" to user.uid,
+                "name" to senderName,
+                "lat" to lat,
+                "lon" to lon,
+                "timestamp" to System.currentTimeMillis()
+            )
+            val docRef = db.collection("sosAlerts").add(data).await()
+            Result.success(docRef.id)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Listen for recent SOS alerts (last 1 hour).
+     */
+    fun listenForSosAlerts(onUpdate: (List<SosAlert>) -> Unit): ListenerRegistration {
+        val cutoff = System.currentTimeMillis() - (60 * 60 * 1000) // 1 hour
+        return db.collection("sosAlerts")
+            .whereGreaterThan("timestamp", cutoff)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreManager", "SOS alerts listen failed: ${error.message}")
+                    // Fallback: unordered query
+                    db.collection("sosAlerts")
+                        .addSnapshotListener { fbSnap, fbErr ->
+                            if (fbErr != null || fbSnap == null) return@addSnapshotListener
+                            val alerts = fbSnap.documents.mapNotNull { doc ->
+                                parseSosAlert(doc)
+                            }.filter { it.timestamp > cutoff }
+                                .sortedByDescending { it.timestamp }
+                            onUpdate(alerts)
+                        }
+                    return@addSnapshotListener
+                }
+                val alerts = snapshot?.documents?.mapNotNull { doc ->
+                    parseSosAlert(doc)
+                }?.sortedByDescending { it.timestamp } ?: emptyList()
+                onUpdate(alerts)
+            }
+    }
+
+    private fun parseSosAlert(doc: com.google.firebase.firestore.DocumentSnapshot): SosAlert? {
+        return try {
+            SosAlert(
+                id = doc.id,
+                uid = doc.getString("uid") ?: "",
+                name = doc.getString("name") ?: "",
+                lat = doc.getDouble("lat") ?: 0.0,
+                lon = doc.getDouble("lon") ?: 0.0,
+                timestamp = doc.getLong("timestamp") ?: 0L
+            )
+        } catch (e: Exception) { null }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Typing Indicator (privateChats/{chatId})
+    // ═══════════════════════════════════════════════════════════════════
+
+    /** Set typing status for a private chat. */
+    fun setTyping(chatId: String, isTyping: Boolean) {
+        val userId = uid ?: return
+        db.collection("privateChats").document(chatId)
+            .update("typing_$userId", isTyping)
+            .addOnFailureListener { e ->
+                Log.w("FirestoreManager", "setTyping failed: ${e.message}")
+            }
+    }
+
+    /** Listen for typing status of the other user in a private chat. */
+    fun listenForTyping(chatId: String, otherUid: String, onUpdate: (Boolean) -> Unit): ListenerRegistration {
+        return db.collection("privateChats").document(chatId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                val isTyping = snapshot.getBoolean("typing_$otherUid") ?: false
+                onUpdate(isTyping)
+            }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Live Location Streaming (SOS real-time tracking)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Update the user's live location in Firestore during an active SOS.
+     * Document path: liveLocations/{uid}
+     */
+    fun updateLiveLocation(lat: Double, lon: Double, accuracy: Float) {
+        val userId = uid ?: return
+        val data = hashMapOf(
+            "uid" to userId,
+            "lat" to lat,
+            "lon" to lon,
+            "accuracy" to accuracy.toDouble(),
+            "timestamp" to FieldValue.serverTimestamp(),
+            "active" to true
+        )
+        db.collection("liveLocations").document(userId)
+            .set(data, SetOptions.merge())
+            .addOnFailureListener { e ->
+                Log.e("FirestoreManager", "Live location update failed: ${e.message}")
+            }
+    }
+
+    /**
+     * Mark live location as inactive and remove the document when SOS stops.
+     */
+    suspend fun clearLiveLocation(): Result<Unit> {
+        val userId = uid ?: return Result.failure(Exception("Not logged in"))
+        return try {
+            db.collection("liveLocations").document(userId)
+                .update("active", false)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            // Document may not exist yet; that's fine
+            Log.w("FirestoreManager", "clearLiveLocation: ${e.message}")
+            Result.success(Unit)
+        }
+    }
+
+    /**
+     * Listen for live location updates of a specific user (for map tracking).
+     * Returns a ListenerRegistration that must be removed when no longer needed.
+     */
+    fun listenForLiveLocation(
+        targetUid: String,
+        onUpdate: (lat: Double, lon: Double, accuracy: Double, active: Boolean) -> Unit
+    ): ListenerRegistration {
+        return db.collection("liveLocations").document(targetUid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreManager", "Live location listener error: ${error.message}")
+                    return@addSnapshotListener
+                }
+                if (snapshot == null || !snapshot.exists()) return@addSnapshotListener
+
+                val lat = snapshot.getDouble("lat") ?: return@addSnapshotListener
+                val lon = snapshot.getDouble("lon") ?: return@addSnapshotListener
+                val accuracy = snapshot.getDouble("accuracy") ?: 0.0
+                val active = snapshot.getBoolean("active") ?: false
+
+                onUpdate(lat, lon, accuracy, active)
+            }
+    }
+
+    /**
+     * Get all currently active live locations (for community safety features).
+     */
+    fun listenForActiveLiveLocations(
+        onUpdate: (List<Map<String, Any>>) -> Unit
+    ): ListenerRegistration {
+        return db.collection("liveLocations")
+            .whereEqualTo("active", true)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreManager", "Active live locations error: ${error.message}")
+                    return@addSnapshotListener
+                }
+                val locations = snapshot?.documents?.mapNotNull { doc ->
+                    val data = doc.data ?: return@mapNotNull null
+                    data + ("uid" to doc.id)
+                } ?: emptyList()
+                onUpdate(locations)
+            }
     }
 
     // ═══════════════════════════════════════════════════════════════════

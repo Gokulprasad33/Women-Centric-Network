@@ -26,7 +26,10 @@ data class SettingsUiState(
     val contactNameError: String? = null,
     val contactPhoneError: String? = null,
     val locationLabelError: String? = null,
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val liveLocationDuration: String = "OFF",     // OFF, 30_MIN, 1_HOUR, UNTIL_DISABLED
+    val userStatus: String = "",                   // Instagram Notes style (max 60 chars)
+    val safetyState: String = "SAFE"               // SAFE, OUTSIDE, SOS, OFFLINE
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -67,6 +70,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                         selectedLanguage = prefs.preferredLanguage,
                         locationSharingEnabled = prefs.locationSharingEnabled,
                         sosMessage = prefs.sosMessage,
+                        liveLocationDuration = prefs.liveLocationDuration,
+                        userStatus = prefs.userStatus,
+                        safetyState = prefs.safetyState,
                         isLoading = false
                     )
                 }
@@ -202,6 +208,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun clearLocationErrors() {
         _uiState.update { it.copy(locationLabelError = null) }
+    }
+
+    // ── Live Location ────────────────────────────────────────────────────
+
+    fun setLiveLocationDuration(duration: String) {
+        viewModelScope.launch { repository.setLiveLocationDuration(duration) }
+    }
+
+    // ── User Status (Instagram Notes) ────────────────────────────────────
+
+    fun setUserStatus(status: String) {
+        viewModelScope.launch { repository.setUserStatus(status.take(60)) }
+    }
+
+    // ── Safety State ─────────────────────────────────────────────────────
+
+    fun setSafetyState(state: String) {
+        viewModelScope.launch { repository.setSafetyState(state) }
     }
 }
 

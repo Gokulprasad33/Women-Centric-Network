@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
 import android.telephony.SmsManager
 import android.util.Log
@@ -22,15 +23,19 @@ import com.example.womencentricnetwork.Model.Settings.EmergencyContactEntity
 import com.example.womencentricnetwork.Model.Settings.SettingsPreferencesDataStore
 import com.example.womencentricnetwork.Model.Settings.SosEventEntity
 import com.example.womencentricnetwork.R
-import com.example.womencentricnetwork.databinding.FragmentHomeBinding
+import com.example.womencentricnetwork.Repository.SafePlaceRepository
+import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.example.womencentricnetwork.databinding.FragmentHomeBinding
 
 class HomeFragment : Fragment(R.layout.fragment_home) {
 
@@ -42,6 +47,17 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
     private val sosEventDao by lazy { db.sosEventDao() }
     private val settingsPrefs by lazy { SettingsPreferencesDataStore(requireContext()) }
     private val firestoreManager by lazy { FirestoreManager() }
+    private val safePlaceRepository by lazy { SafePlaceRepository(requireContext()) }
+    private val fusedLocationClient: FusedLocationProviderClient by lazy {
+        LocationServices.getFusedLocationProviderClient(requireContext())
+    }
+
+    // ── Live SOS Location Tracking ───────────────────────────────────────
+    private var isSosActive = false
+    private var liveLocationCallback: LocationCallback? = null
+    private val sosTimeoutHandler = Handler(Looper.getMainLooper())
+    private val SOS_TIMEOUT_MS = 10L * 60 * 1000  // 10 minutes auto-stop
+    private val sosTimeoutRunnable = Runnable { stopLiveLocationTracking() }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -90,7 +106,7 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             }
         }
         binding.btnSafeplace.setOnClickListener {
-            openPlacesInMaps()
+            findSafeSpace()
         }
 
         binding.btnReportLocation.setOnClickListener {
@@ -101,10 +117,20 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             sos()
         }
 
+        binding.btnStopSOS.setOnClickListener {
+            stopLiveLocationTracking()
+        }
+
         // ── Firebase: Test connection & register FCM token ──────────
         testFirebaseConnection()
         registerFcmToken()
 
+        // ── Preload safe places dataset into memory ─────────────────
+        viewLifecycleOwner.lifecycleScope.launch {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                safePlaceRepository.preload()
+            }
+        }
         }
 
 
@@ -204,12 +230,23 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
                     Log.e("HomeFragment", "Firestore sync failed: ${e.message}")
                 }
 
+                // Broadcast in-app SOS alert & update presence to SOS
+                try {
+                    firestoreManager.createSosAlert(lat, lon)
+                    firestoreManager.updateSafetyState(com.example.womencentricnetwork.Model.SafetyState.SOS)
+                } catch (e: Exception) {
+                    Log.e("HomeFragment", "SOS alert broadcast failed: ${e.message}")
+                }
+
                 // Show confirmation
                 Toast.makeText(
                     context,
                     "SOS alert sent to $sentCount of ${contacts.size} contact(s)",
                     Toast.LENGTH_LONG
                 ).show()
+
+                // Start continuous live location tracking
+                startLiveLocationTracking()
 
                 // Auto-call emergency number (112)
                 callEmergencyNumber()
@@ -280,6 +317,110 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
             }
             startActivity(dialIntent)
         }
+    }
+
+    // ── Live Location Tracking (SOS) ─────────────────────────────────────
+
+    /**
+     * Start continuous GPS updates every 5 seconds during SOS.
+     * Uploads each update to Firestore liveLocations/{uid}.
+     * Auto-stops after 10 minutes for battery safety.
+     */
+    private fun startLiveLocationTracking() {
+        if (isSosActive) {
+            Log.d("HomeFragment", "Live tracking already active")
+            return
+        }
+
+        if (ActivityCompat.checkSelfPermission(
+                requireContext(), Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e("HomeFragment", "Cannot start live tracking — location permission missing")
+            Toast.makeText(context, "Location permission required for live tracking", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isSosActive = true
+        Log.d("HomeFragment", "Starting live location tracking")
+
+        // Show Stop SOS button
+        binding.btnStopSOS.visibility = View.VISIBLE
+
+        // Build high-accuracy location request: update every 5 seconds
+        val locationRequest = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY,
+            5000 // 5 seconds interval
+        )
+            .setMinUpdateIntervalMillis(3000)       // fastest: 3 seconds
+            .setMinUpdateDistanceMeters(5f)          // only if moved > 5m
+            .build()
+
+        // Create callback that uploads each location to Firestore
+        liveLocationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                val location = result.lastLocation ?: return
+
+                Log.d(
+                    "HomeFragment",
+                    "Live location update: ${location.latitude}, ${location.longitude} (accuracy: ${location.accuracy}m)"
+                )
+
+                // Upload to Firestore (fire-and-forget, non-blocking)
+                firestoreManager.updateLiveLocation(
+                    lat = location.latitude,
+                    lon = location.longitude,
+                    accuracy = location.accuracy
+                )
+            }
+        }
+
+        // Start location updates
+        fusedLocationClient.requestLocationUpdates(
+            locationRequest,
+            liveLocationCallback!!,
+            Looper.getMainLooper()
+        )
+
+        // Schedule auto-stop after 10 minutes
+        sosTimeoutHandler.postDelayed(sosTimeoutRunnable, SOS_TIMEOUT_MS)
+
+        Toast.makeText(context, "Live location tracking started", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Stop continuous GPS tracking and mark live location as inactive in Firestore.
+     */
+    private fun stopLiveLocationTracking() {
+        if (!isSosActive) {
+            Log.d("HomeFragment", "Live tracking not active — nothing to stop")
+            return
+        }
+
+        isSosActive = false
+        Log.d("HomeFragment", "Stopping live location tracking")
+
+        // Remove location updates
+        liveLocationCallback?.let {
+            fusedLocationClient.removeLocationUpdates(it)
+        }
+        liveLocationCallback = null
+
+        // Cancel auto-stop timer
+        sosTimeoutHandler.removeCallbacks(sosTimeoutRunnable)
+
+        // Hide Stop SOS button
+        if (_binding != null) {
+            binding.btnStopSOS.visibility = View.GONE
+        }
+
+        // Mark live location as inactive in Firestore + reset presence
+        viewLifecycleOwner.lifecycleScope.launch {
+            firestoreManager.clearLiveLocation()
+            firestoreManager.updateSafetyState(com.example.womencentricnetwork.Model.SafetyState.SAFE)
+        }
+
+        Toast.makeText(context, "SOS tracking stopped", Toast.LENGTH_SHORT).show()
     }
 
     // ── Firebase: Test Connection ─────────────────────────────────────
@@ -373,6 +514,98 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         }
     }
 
+    // ── Find Safe Space (local dataset, no network) ───────────────────
+
+    private fun findSafeSpace() {
+        Log.d("HOME_SAFE", "findSafeSpace called. loaded=${safePlaceRepository.isLoaded} error=${safePlaceRepository.loadError}")
+
+        // Ensure data is loaded
+        if (!safePlaceRepository.isLoaded) {
+            Toast.makeText(requireContext(), "Loading safe places...", Toast.LENGTH_SHORT).show()
+            viewLifecycleOwner.lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                safePlaceRepository.preload()
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    if (safePlaceRepository.isLoaded) {
+                        findSafeSpace() // retry once loaded
+                    } else {
+                        Toast.makeText(requireContext(), "No safe places dataset loaded", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            return
+        }
+
+        // Permission check
+        if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 101)
+            Toast.makeText(context, "Location permission required", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        Toast.makeText(requireContext(), "Finding nearest safe place...", Toast.LENGTH_SHORT).show()
+
+        // Primary: current high-accuracy fix
+        fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+            .addOnSuccessListener { loc ->
+                if (loc != null) {
+                    Log.d("HOME_SAFE", "Got currentLocation ${loc.latitude}, ${loc.longitude}")
+                    handleSafePlaceResult(loc.latitude, loc.longitude)
+                } else {
+                    Log.w("HOME_SAFE", "currentLocation null, trying lastLocation")
+                    // Fallback: lastLocation
+                    fusedLocationClient.lastLocation.addOnSuccessListener { last ->
+                        if (last != null) {
+                            Log.d("HOME_SAFE", "Using lastLocation ${last.latitude}, ${last.longitude}")
+                            handleSafePlaceResult(last.latitude, last.longitude)
+                        } else {
+                            Toast.makeText(requireContext(), "Unable to get location. Please enable GPS and try again.", Toast.LENGTH_LONG).show()
+                        }
+                    }.addOnFailureListener { e ->
+                        Log.e("HOME_SAFE", "lastLocation failed", e)
+                        Toast.makeText(requireContext(), "Location error: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("HOME_SAFE", "currentLocation failed", e)
+                Toast.makeText(requireContext(), "Location error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+    }
+
+    private fun handleSafePlaceResult(lat: Double, lon: Double) {
+        viewLifecycleOwner.lifecycleScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            val result = safePlaceRepository.findNearestWithDistance(lat, lon)
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (result == null) {
+                    Toast.makeText(requireContext(), "No safe places within 5 km", Toast.LENGTH_LONG).show()
+                    return@withContext
+                }
+
+                val (place, distance) = result
+                Log.d("HOME_SAFE", "Nearest: ${place.name} (${place.type}) at ${"%.0f".format(distance)}m")
+
+                val bundle = Bundle().apply {
+                    putString("placeName", place.name)
+                    putString("placeType", place.type)
+                    putDouble("placeLat", place.lat)
+                    putDouble("placeLng", place.lng)
+                    putFloat("distanceM", distance)
+                    putDouble("userLat", lat)
+                    putDouble("userLng", lon)
+                }
+
+                try {
+                    findNavController().navigate(R.id.safeRouteFragment, bundle)
+                } catch (e: Exception) {
+                    Log.e("HOME_SAFE", "Navigation failed", e)
+                    Toast.makeText(requireContext(), "Navigation error", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     private fun openPlacesInMaps() {
 
         val query = "police OR hospital OR clinic OR pharmacy OR bus OR train OR metro OR transit OR market OR mall OR store OR tea shop OR bakery OR restaurant OR hotel OR kovil OR church OR mosque OR petrol pump OR beach"
@@ -383,6 +616,18 @@ class HomeFragment : Fragment(R.layout.fragment_home) {
         intent.setPackage("com.google.android.apps.maps")
 
         startActivity(intent)
+    }
+
+    // ── Lifecycle cleanup ────────────────────────────────────────────────
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // Stop live tracking to prevent leaks (but keep SOS active if running)
+        liveLocationCallback?.let {
+            fusedLocationClient.removeLocationUpdates(it)
+        }
+        sosTimeoutHandler.removeCallbacks(sosTimeoutRunnable)
+        _binding = null
     }
 
 }

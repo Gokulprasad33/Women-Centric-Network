@@ -98,5 +98,23 @@ class SettingsRepository(
     suspend fun setSosMessage(message: String) {
         preferencesDataStore.setSosMessage(message)
     }
+
+    // ── Live Location ────────────────────────────────────────────────────
+
+    suspend fun setLiveLocationDuration(duration: String) {
+        preferencesDataStore.setLiveLocationDuration(duration)
+    }
+
+    // ── User Status ──────────────────────────────────────────────────────
+
+    suspend fun setUserStatus(status: String) {
+        preferencesDataStore.setUserStatus(status)
+    }
+
+    // ── Safety State ─────────────────────────────────────────────────────
+
+    suspend fun setSafetyState(state: String) {
+        preferencesDataStore.setSafetyState(state)
+    }
 }
 

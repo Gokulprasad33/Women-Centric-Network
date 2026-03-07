@@ -12,6 +12,8 @@ import androidx.core.app.ActivityCompat
 import androidx.fragment.app.Fragment
 import com.example.womencentricnetwork.Firebase.FirestoreManager
 import com.example.womencentricnetwork.Model.Incident
+import com.example.womencentricnetwork.Model.SafetyState
+import com.example.womencentricnetwork.Model.UserPresence
 import com.example.womencentricnetwork.R
 import com.example.womencentricnetwork.databinding.FragmentMapBinding
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -38,9 +40,17 @@ class MapFragment : Fragment(), OnMapReadyCallback {
 
     private val firestoreManager by lazy { FirestoreManager() }
     private var incidentListener: ListenerRegistration? = null
+    private var liveLocationListener: ListenerRegistration? = null
+    private var presenceListener: ListenerRegistration? = null
 
     // Keep track of incident markers so we can clear and redraw on updates
     private val incidentMarkers = mutableListOf<Marker>()
+
+    // Keep track of live SOS user markers
+    private val liveLocationMarkers = mutableMapOf<String, Marker>()
+
+    // Keep track of presence markers (safety-state colored)
+    private val presenceMarkers = mutableMapOf<String, Marker>()
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -66,9 +76,13 @@ class MapFragment : Fragment(), OnMapReadyCallback {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // Remove Firestore listener to prevent memory leaks
+        // Remove Firestore listeners to prevent memory leaks
         incidentListener?.remove()
         incidentListener = null
+        liveLocationListener?.remove()
+        liveLocationListener = null
+        presenceListener?.remove()
+        presenceListener = null
         _binding = null
     }
 
@@ -91,6 +105,12 @@ class MapFragment : Fragment(), OnMapReadyCallback {
 
         // Start real-time incident listener
         startIncidentListener()
+
+        // Start live SOS location listener
+        startLiveLocationListener()
+
+        // Start presence listener (safety-state colored markers)
+        startPresenceListener()
     }
 
     // ── Location Permission ─────────────────────────────────────────────
@@ -177,6 +197,127 @@ class MapFragment : Fragment(), OnMapReadyCallback {
 
             if (marker != null) {
                 incidentMarkers.add(marker)
+            }
+        }
+    }
+
+    // ── Real-time Live SOS Location Listener ─────────────────────────────
+
+    /**
+     * Listen for all active SOS live locations from Firestore.
+     * Shows orange markers for users currently sharing their live location.
+     */
+    private fun startLiveLocationListener() {
+        liveLocationListener = firestoreManager.listenForActiveLiveLocations { locations ->
+            if (!::mMap.isInitialized) return@listenForActiveLiveLocations
+
+            Log.d(TAG, "Live locations update: ${locations.size} active SOS user(s)")
+
+            // Remove markers for users no longer active
+            val activeUids = locations.mapNotNull { it["uid"] as? String }.toSet()
+            val toRemove = liveLocationMarkers.keys - activeUids
+            for (uid in toRemove) {
+                liveLocationMarkers[uid]?.remove()
+                liveLocationMarkers.remove(uid)
+            }
+
+            // Update/add markers for active SOS users
+            for (locData in locations) {
+                val uid = locData["uid"] as? String ?: continue
+                val lat = locData["lat"] as? Double ?: continue
+                val lon = locData["lon"] as? Double ?: continue
+                val accuracy = (locData["accuracy"] as? Double)?.toInt() ?: 0
+                val position = LatLng(lat, lon)
+
+                val existingMarker = liveLocationMarkers[uid]
+                if (existingMarker != null) {
+                    // Update position of existing marker
+                    existingMarker.position = position
+                    existingMarker.snippet = "Accuracy: ${accuracy}m"
+                } else {
+                    // Create new marker (orange for live SOS)
+                    val marker = mMap.addMarker(
+                        MarkerOptions()
+                            .position(position)
+                            .title("🚨 SOS — Live Location")
+                            .snippet("Accuracy: ${accuracy}m")
+                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE))
+                    )
+                    if (marker != null) {
+                        liveLocationMarkers[uid] = marker
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Real-time Presence Listener (Safety-State Colored Markers) ────────
+
+    /**
+     * Listen for user presence documents from Firestore.
+     * Displays markers colored by safety state:
+     *   Blue   → current user
+     *   Green  → SAFE users
+     *   Orange → OUTSIDE users
+     *   Red    → SOS users
+     *   (OFFLINE users are not shown)
+     */
+    private fun startPresenceListener() {
+        presenceListener = firestoreManager.listenForPresence { presenceList ->
+            if (!::mMap.isInitialized) return@listenForPresence
+
+            Log.d(TAG, "Presence update: ${presenceList.size} user(s)")
+
+            // Remove markers for users no longer present
+            val activeUids = presenceList.map { it.uid }.toSet()
+            val toRemove = presenceMarkers.keys - activeUids
+            for (uid in toRemove) {
+                presenceMarkers[uid]?.remove()
+                presenceMarkers.remove(uid)
+            }
+
+            for (presence in presenceList) {
+                // Skip users without location
+                if (presence.lat == 0.0 && presence.lon == 0.0) continue
+                // Skip OFFLINE users
+                if (presence.safetyStateEnum == SafetyState.OFFLINE) continue
+
+                val position = LatLng(presence.lat, presence.lon)
+                val markerColor = when (presence.safetyStateEnum) {
+                    SafetyState.SAFE -> BitmapDescriptorFactory.HUE_GREEN
+                    SafetyState.OUTSIDE -> BitmapDescriptorFactory.HUE_YELLOW
+                    SafetyState.SOS -> BitmapDescriptorFactory.HUE_RED
+                    SafetyState.OFFLINE -> continue // already filtered
+                }
+                val stateEmoji = when (presence.safetyStateEnum) {
+                    SafetyState.SAFE -> "🟢"
+                    SafetyState.OUTSIDE -> "🟠"
+                    SafetyState.SOS -> "🔴"
+                    SafetyState.OFFLINE -> "⚫"
+                }
+
+                val snippet = buildString {
+                    append("$stateEmoji ${presence.safetyState}")
+                    if (presence.status.isNotBlank()) append(" — ${presence.status}")
+                }
+
+                val existing = presenceMarkers[presence.uid]
+                if (existing != null) {
+                    existing.position = position
+                    existing.snippet = snippet
+                    existing.title = presence.name
+                } else {
+                    val marker = mMap.addMarker(
+                        MarkerOptions()
+                            .position(position)
+                            .title(presence.name)
+                            .snippet(snippet)
+                            .icon(BitmapDescriptorFactory.defaultMarker(markerColor))
+                    )
+                    if (marker != null) {
+                        presenceMarkers[presence.uid] = marker
+                    }
+                }
             }
         }
     }

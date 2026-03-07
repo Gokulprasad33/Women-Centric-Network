@@ -83,6 +83,9 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
+    // OSMDroid (in-app OpenStreetMap)
+    implementation("org.osmdroid:osmdroid-android:6.1.16")
+
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))

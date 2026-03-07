@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.example.womencentricnetwork.MainActivity
@@ -14,8 +15,10 @@ import com.example.womencentricnetwork.R
  * Utility class for building and displaying notifications.
  *
  * Channels:
- *   - sos_channel      → SOS emergency alerts (IMPORTANCE_HIGH)
+ *   - sos_channel       → SOS emergency alerts (IMPORTANCE_HIGH) — RED
+ *   - nearby_channel    → Nearby user / presence alerts (IMPORTANCE_DEFAULT) — ORANGE
  *   - community_channel → Community help requests (IMPORTANCE_DEFAULT)
+ *   - chat_channel      → Chat messages (IMPORTANCE_LOW) — BLUE
  *   - general_channel   → General app updates (IMPORTANCE_LOW)
  */
 class NotificationHelper(private val context: Context) {
@@ -23,12 +26,16 @@ class NotificationHelper(private val context: Context) {
     companion object {
         // Channel IDs
         const val CHANNEL_SOS = "sos_channel"
+        const val CHANNEL_NEARBY_USER = "nearby_channel"
         const val CHANNEL_COMMUNITY = "community_channel"
+        const val CHANNEL_CHAT = "chat_channel"
         const val CHANNEL_GENERAL = "general_channel"
 
         // Notification IDs (use unique IDs to avoid overwriting)
         const val NOTIFICATION_SOS = 1001
+        const val NOTIFICATION_NEARBY = 1004
         const val NOTIFICATION_COMMUNITY = 1002
+        const val NOTIFICATION_CHAT = 1005
         const val NOTIFICATION_GENERAL = 1003
     }
 
@@ -63,6 +70,29 @@ class NotificationHelper(private val context: Context) {
                 enableVibration(true)
             }
 
+            val nearbyChannel = NotificationChannel(
+                CHANNEL_NEARBY_USER,
+                "Nearby Alerts",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Alerts about nearby users and SOS events"
+                enableVibration(true)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    lightColor = Color.parseColor("#FF9800") // Orange
+                }
+            }
+
+            val chatChannel = NotificationChannel(
+                CHANNEL_CHAT,
+                "Chat Messages",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Private and community chat messages"
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    lightColor = Color.BLUE
+                }
+            }
+
             val generalChannel = NotificationChannel(
                 CHANNEL_GENERAL,
                 "General Updates",
@@ -72,24 +102,38 @@ class NotificationHelper(private val context: Context) {
             }
 
             notificationManager.createNotificationChannels(
-                listOf(sosChannel, communityChannel, generalChannel)
+                listOf(sosChannel, nearbyChannel, communityChannel, chatChannel, generalChannel)
             )
         }
     }
 
-    // ── SOS Emergency Alert ─────────────────────────────────────────────
+    // ── SOS Emergency Alert (RED) ───────────────────────────────────────
 
     fun showSosAlert(title: String, body: String, notificationId: Int = NOTIFICATION_SOS) {
         val notification = buildNotification(
             channelId = CHANNEL_SOS,
             title = "🚨 $title",
             body = body,
-            priority = NotificationCompat.PRIORITY_HIGH
+            priority = NotificationCompat.PRIORITY_HIGH,
+            colorInt = Color.RED
         )
         notificationManager.notify(notificationId, notification)
     }
 
-    // ── Community Alert ─────────────────────────────────────────────────
+    // ── Nearby User Alert (ORANGE) ───────────────────────────────────────
+
+    fun showNearbyAlert(title: String, body: String, notificationId: Int = NOTIFICATION_NEARBY) {
+        val notification = buildNotification(
+            channelId = CHANNEL_NEARBY_USER,
+            title = "⚠️ $title",
+            body = body,
+            priority = NotificationCompat.PRIORITY_DEFAULT,
+            colorInt = Color.parseColor("#FF9800")
+        )
+        notificationManager.notify(notificationId, notification)
+    }
+
+    // ── Community Alert ──────────────────────────────────────────────────
 
     fun showCommunityAlert(title: String, body: String, notificationId: Int = NOTIFICATION_COMMUNITY) {
         val notification = buildNotification(
@@ -113,13 +157,27 @@ class NotificationHelper(private val context: Context) {
         notificationManager.notify(notificationId, notification)
     }
 
+    // ── Chat Notification (BLUE) ─────────────────────────────────────────
+
+    fun showChatNotification(title: String, body: String, notificationId: Int = NOTIFICATION_CHAT) {
+        val notification = buildNotification(
+            channelId = CHANNEL_CHAT,
+            title = "💬 $title",
+            body = body,
+            priority = NotificationCompat.PRIORITY_LOW,
+            colorInt = Color.BLUE
+        )
+        notificationManager.notify(notificationId, notification)
+    }
+
     // ── Build Notification ──────────────────────────────────────────────
 
     private fun buildNotification(
         channelId: String,
         title: String,
         body: String,
-        priority: Int
+        priority: Int,
+        colorInt: Int? = null
     ): android.app.Notification {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -137,6 +195,7 @@ class NotificationHelper(private val context: Context) {
             .setPriority(priority)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
+            .apply { if (colorInt != null) setColor(colorInt) }
             .build()
     }
 

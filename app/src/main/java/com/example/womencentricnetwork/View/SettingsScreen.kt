@@ -198,6 +198,49 @@ fun SettingsScreenContent(viewModel: SettingsViewModel, onLogout: () -> Unit = {
                 )
             }
 
+            // ── Live Location Sharing ─────────────────────────────────────
+            item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Share Live Location") }
+            item {
+                Text(
+                    text = "When enabled, your location updates every 15 seconds so trusted contacts can see you on the map.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            item {
+                LiveLocationDurationSelector(
+                    selected = uiState.liveLocationDuration,
+                    onSelected = { viewModel.setLiveLocationDuration(it) }
+                )
+            }
+
+            // ── Safety State ──────────────────────────────────────────────
+            item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Safety Status") }
+            item {
+                Text(
+                    text = "Set your current safety state. This is visible to other app users.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            item {
+                SafetyStateSelector(
+                    selected = uiState.safetyState,
+                    onSelected = { viewModel.setSafetyState(it) }
+                )
+            }
+
+            // ── User Status (Instagram Notes) ─────────────────────────────
+            item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
+            item { SectionHeader("Status Note") }
+            item {
+                UserStatusSection(
+                    status = uiState.userStatus,
+                    onStatusChange = { viewModel.setUserStatus(it) }
+                )
+            }
             // ── SOS Message ─────────────────────────────────────────────
             item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
             item { SectionHeader("SOS Message") }
@@ -660,4 +703,121 @@ fun AddEditTrustedLocationDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+}
+
+// ── Live Location Duration Selector ─────────────────────────────────────
+
+@Composable
+fun LiveLocationDurationSelector(selected: String, onSelected: (String) -> Unit) {
+    val options = listOf(
+        "OFF" to "Off",
+        "30_MIN" to "30 minutes",
+        "1_HOUR" to "1 hour",
+        "UNTIL_DISABLED" to "Until I turn it off"
+    )
+    Column(Modifier.selectableGroup()) {
+        options.forEach { (code, label) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected == code,
+                        onClick = { onSelected(code) },
+                        role = Role.RadioButton
+                    )
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = selected == code,
+                    onClick = null
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(label)
+                if (code != "OFF" && selected == code) {
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "🟢 Active",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Safety State Selector ────────────────────────────────────────────────
+
+@Composable
+fun SafetyStateSelector(selected: String, onSelected: (String) -> Unit) {
+    val options = listOf(
+        "SAFE" to Pair("🟢 Safe", "I'm at a safe location"),
+        "OUTSIDE" to Pair("🟠 Outside", "I'm traveling / outside"),
+        "OFFLINE" to Pair("⚫ Offline", "Don't show my status")
+    )
+    Column(Modifier.selectableGroup()) {
+        options.forEach { (code, pair) ->
+            val (emoji, description) = pair
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected == code,
+                        onClick = { onSelected(code) },
+                        role = Role.RadioButton
+                    )
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = selected == code,
+                    onClick = null
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(emoji, fontWeight = FontWeight.Medium)
+                    Text(description, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+// ── User Status Section (Instagram Notes) ────────────────────────────────
+
+@Composable
+fun UserStatusSection(status: String, onStatusChange: (String) -> Unit) {
+    var localStatus by remember { mutableStateOf(status) }
+    var isSaved by remember { mutableStateOf(true) }
+
+    LaunchedEffect(status) { localStatus = status; isSaved = true }
+
+    Column {
+        OutlinedTextField(
+            value = localStatus,
+            onValueChange = {
+                if (it.length <= 60) {
+                    localStatus = it
+                    isSaved = false
+                }
+            },
+            label = { Text("What are you up to?") },
+            placeholder = { Text("e.g. \"At College\", \"Going Home\"") },
+            supportingText = { Text("${localStatus.length}/60") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = {
+                onStatusChange(localStatus)
+                isSaved = true
+            },
+            enabled = !isSaved
+        ) {
+            Text(if (isSaved) "✓ Status Saved" else "Update Status")
+        }
+    }
 }

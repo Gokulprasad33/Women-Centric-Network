@@ -65,7 +65,11 @@ class FCMService : FirebaseMessagingService() {
             when (type) {
                 "sos_alert" -> notificationHelper.showSosAlert(title, body,
                     notificationId = System.currentTimeMillis().toInt())
+                "nearby_user" -> notificationHelper.showNearbyAlert(title, body,
+                    notificationId = System.currentTimeMillis().toInt())
                 "community_help" -> notificationHelper.showCommunityAlert(title, body,
+                    notificationId = System.currentTimeMillis().toInt())
+                "chat" -> notificationHelper.showChatNotification(title, body,
                     notificationId = System.currentTimeMillis().toInt())
                 else -> notificationHelper.showGeneralNotification(title, body,
                     notificationId = System.currentTimeMillis().toInt())

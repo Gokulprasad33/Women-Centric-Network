@@ -87,6 +87,19 @@
                     android:layout_centerInParent="true" />
             </RelativeLayout>
 
+            <!-- Stop SOS Button (hidden by default, shown during active SOS) -->
+            <Button
+                android:id="@+id/btnStopSOS"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginHorizontal="40dp"
+                android:text="⬛ STOP SOS TRACKING"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#FF5252"
+                android:visibility="gone" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">
